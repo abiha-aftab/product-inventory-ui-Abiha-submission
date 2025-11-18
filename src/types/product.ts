@@ -1,3 +1,9 @@
+/**
+ * Historical issues:
+ * - `FilterOptions.category` was required, forcing callers to pass empty strings
+ *   even when no category filter was desired, complicating reset logic.
+ */
+
 export interface Product {
   id: string
   name: string
@@ -25,7 +31,7 @@ export interface ProductDTO {
 }
 
 export interface FilterOptions {
-  category: string
+  category?: string
   minPrice?: number
   maxPrice?: number
   inStock?: boolean

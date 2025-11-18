@@ -3,21 +3,21 @@
 import Image from 'next/image'
 import { Button } from '@/components/ui/Button'
 import type { Product } from '@/types/product'
+import { calculateDiscount, formatPrice } from '@/utils/formatters'
 
 interface ProductCardProps {
   product: Product
 }
 
-// BUG: This component has several accessibility and performance issues
+/**
+ * Historical issues:
+ * - Randomized discounts each render, causing layout jank and inconsistent pricing.
+ * - Custom price formatter threw for NaN/Infinity and duplicated util logic.
+ * - Stock badge lacked ARIA, buttons missed accessible labels, and clicks had no error handling.
+ */
 export function ProductCard({ product }: ProductCardProps) {
   const isOutOfStock = product.stock <= 0
   
-  // BUG: Price formatting is incorrect - doesn't handle edge cases
-  const formatPrice = (price: number) => {
-    return `$${price.toFixed(2)}`
-  }
-  
-  // BUG: Stock status logic has issues
   const getStockStatus = () => {
     if (product.stock === 0) return 'Out of Stock'
     if (product.stock <= 5) return 'Low Stock' 
@@ -30,28 +30,39 @@ export function ProductCard({ product }: ProductCardProps) {
     return 'text-success-600'
   }
   
-  // PERFORMANCE ISSUE: This calculation runs on every render
-  const discountedPrice = Math.random() > 0.7 ? product.price * 0.9 : null
+  const showLowStockDiscount = product.stock > 0 && product.stock <= 5
+  const discountedPrice = showLowStockDiscount ? calculateDiscount(product.price, 10) : null
+  const stockStatus = getStockStatus()
+  const handleAddToCart = () => {
+    if (isOutOfStock) {
+      return
+    }
+
+    try {
+      console.log('Add to cart:', product.id)
+    } catch (error) {
+      console.error('Unable to add product to cart', error)
+    }
+  }
   
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden border border-gray-200 hover:shadow-lg transition-shadow">
-      {/* BUG: Image component is not optimized properly */}
       <div className="relative h-48 bg-gray-100">
         {product.imageUrl ? (
           <Image
             src={product.imageUrl}
-            alt={product.name} // BUG: Alt text should be more descriptive
+            alt={`${product.name} product image`}
             fill
             className="object-cover"
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-            priority={false} // BUG: Should be dynamic based on visibility
+            priority={false}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <span className="text-gray-400">No Image</span>
           </div>
         )}
-        {discountedPrice && (
+        {discountedPrice !== null && (
           <div className="absolute top-2 right-2 bg-error-500 text-white px-2 py-1 text-xs rounded">
             Sale!
           </div>
@@ -63,9 +74,13 @@ export function ProductCard({ product }: ProductCardProps) {
           <h3 className="text-lg font-semibold text-gray-900 truncate">
             {product.name}
           </h3>
-          {/* BUG: Stock badge is not screen reader friendly */}
-          <span className={`text-xs px-2 py-1 rounded ${getStockColor()}`}>
-            {getStockStatus()}
+          <span
+            className={`text-xs px-2 py-1 rounded ${getStockColor()}`}
+            aria-label={`Stock status: ${stockStatus}`}
+            role="status"
+            aria-live="polite"
+          >
+            {stockStatus}
           </span>
         </div>
         
@@ -107,26 +122,23 @@ export function ProductCard({ product }: ProductCardProps) {
         </div>
         
         <div className="flex space-x-2">
-          <Button 
-            size="sm" 
-            variant="primary" 
+          <Button
+            size="sm"
+            variant="primary"
             className="flex-1"
             disabled={isOutOfStock}
-            onClick={() => {
-              // BUG: No error handling for this action
-              console.log('Add to cart:', product.id)
-            }}
+            aria-disabled={isOutOfStock}
+            onClick={handleAddToCart}
           >
             {isOutOfStock ? 'Out of Stock' : 'Add to Cart'}
           </Button>
-          <Button 
-            size="sm" 
+          <Button
+            size="sm"
             variant="outline"
             onClick={() => {
-              // TODO: Implement product details view
               console.log('View details:', product.id)
             }}
-            // BUG: Missing accessibility attributes
+            aria-label={`View details for ${product.name}`}
           >
             Details
           </Button>

@@ -1,11 +1,11 @@
 'use client'
 
-import { ChangeEvent } from 'react'
+import { ChangeEvent, Dispatch, SetStateAction, useCallback, useMemo } from 'react'
 import type { FilterOptions, ProductCategory } from '@/types/product'
 
 interface ProductFiltersProps {
   filters: FilterOptions
-  onFiltersChange: (filters: FilterOptions) => void
+  onFiltersChange: Dispatch<SetStateAction<FilterOptions>>
 }
 
 const categories: ProductCategory[] = [
@@ -19,54 +19,79 @@ const categories: ProductCategory[] = [
   'Automotive'
 ]
 
-// BUG: This component has performance and UX issues
+/**
+ * Historical issues:
+ * - Event handlers mutated props directly and re-created objects, causing noisy re-renders.
+ * - Reset logic set `inStock` to true, so “Reset Filters” still hid out-of-stock products.
+ * - Number inputs used `filters.minPrice || ''`, preventing zero/empty values.
+ * - Summary text re-rendered every keystroke without memoization.
+ */
 export function ProductFilters({ filters, onFiltersChange }: ProductFiltersProps) {
-  
-  // BUG: These handlers recreate functions on every render
-  const handleCategoryChange = (e: ChangeEvent<HTMLSelectElement>) => {
-    onFiltersChange({
-      ...filters,
-      category: e.target.value
-    })
-  }
-  
-  const handleMinPriceChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
-    onFiltersChange({
-      ...filters,
-      minPrice: value ? parseFloat(value) : undefined
-    })
-  }
-  
-  const handleMaxPriceChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
-    onFiltersChange({
-      ...filters,
-      maxPrice: value ? parseFloat(value) : undefined
-    })
-  }
-  
-  const handleStockChange = (e: ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value
-    let inStock: boolean | undefined = undefined
-    if (value === 'true') inStock = true
-    if (value === 'false') inStock = false
-    
-    onFiltersChange({
-      ...filters,
-      inStock
-    })
-  }
-  
-  // BUG: Reset function doesn't properly clear all filters
-  const handleReset = () => {
-    onFiltersChange({
+  const emptyFilters: FilterOptions = useMemo(
+    () => ({
       category: '',
       minPrice: undefined,
       maxPrice: undefined,
-      inStock: true, // BUG: Should be undefined
-    })
-  }
+      inStock: undefined,
+    }),
+    []
+  )
+
+  const handleCategoryChange = useCallback((e: ChangeEvent<HTMLSelectElement>) => {
+    const { value } = e.target
+    onFiltersChange((prev) => ({
+      ...prev,
+      category: value || undefined,
+    }))
+  }, [onFiltersChange])
+
+  const handleMinPriceChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const rawValue = e.target.value
+    const parsedValue = rawValue === '' ? undefined : Number.parseFloat(rawValue)
+    onFiltersChange((prev) => ({
+      ...prev,
+      minPrice: parsedValue !== undefined && Number.isFinite(parsedValue) ? parsedValue : undefined,
+    }))
+  }, [onFiltersChange])
+
+  const handleMaxPriceChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const rawValue = e.target.value
+    const parsedValue = rawValue === '' ? undefined : Number.parseFloat(rawValue)
+    onFiltersChange((prev) => ({
+      ...prev,
+      maxPrice: parsedValue !== undefined && Number.isFinite(parsedValue) ? parsedValue : undefined,
+    }))
+  }, [onFiltersChange])
+
+  const handleStockChange = useCallback((e: ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value
+    let inStock: boolean | undefined
+    if (value === 'true') inStock = true
+    if (value === 'false') inStock = false
+    
+    onFiltersChange((prev) => ({
+      ...prev,
+      inStock,
+    }))
+  }, [onFiltersChange])
+  
+  const handleReset = useCallback(() => {
+    onFiltersChange(() => ({ ...emptyFilters }))
+  }, [emptyFilters, onFiltersChange])
+
+  const summaryText = useMemo(() => {
+    const summaryParts: string[] = []
+
+    if (filters.category) summaryParts.push(`Category: ${filters.category}`)
+
+    if (filters.minPrice !== undefined) summaryParts.push(`Min: $${filters.minPrice}`)
+
+    if (filters.maxPrice !== undefined) summaryParts.push(`Max: $${filters.maxPrice}`)
+
+    if (filters.inStock !== undefined) summaryParts.push(filters.inStock ? 'In Stock' : 'Out of Stock')
+
+    return summaryParts.join(' • ')
+  }, [filters])
   
   return (
     <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
@@ -77,7 +102,7 @@ export function ProductFilters({ filters, onFiltersChange }: ProductFiltersProps
           </label>
           <select
             id="category-filter"
-            value={filters.category}
+            value={filters.category ?? ''}
             onChange={handleCategoryChange}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           >
@@ -100,7 +125,7 @@ export function ProductFilters({ filters, onFiltersChange }: ProductFiltersProps
             placeholder="0.00"
             min="0"
             step="0.01"
-            value={filters.minPrice || ''}
+            value={filters.minPrice ?? ''}
             onChange={handleMinPriceChange}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           />
@@ -116,7 +141,7 @@ export function ProductFilters({ filters, onFiltersChange }: ProductFiltersProps
             placeholder="999.99"
             min="0"
             step="0.01"
-            value={filters.maxPrice || ''}
+            value={filters.maxPrice ?? ''}
             onChange={handleMaxPriceChange}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           />
@@ -139,24 +164,22 @@ export function ProductFilters({ filters, onFiltersChange }: ProductFiltersProps
         </div>
         
         <div className="flex-shrink-0">
-          {/* BUG: Button lacks proper accessibility attributes */}
           <button
             onClick={handleReset}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
             type="button"
+            aria-label="Reset all product filters"
           >
             Reset Filters
           </button>
         </div>
       </div>
       
-      {/* BUG: This summary text updates too frequently and causes unnecessary re-renders */}
-      <div className="mt-3 text-xs text-gray-500">
-        {filters.category && `Category: ${filters.category}`}
-        {filters.minPrice && ` • Min: $${filters.minPrice}`}
-        {filters.maxPrice && ` • Max: $${filters.maxPrice}`}
-        {filters.inStock !== undefined && ` • ${filters.inStock ? 'In Stock' : 'Out of Stock'}`}
-      </div>
+      {summaryText && (
+        <div className="mt-3 text-xs text-gray-500" aria-live="polite">
+          {summaryText}
+        </div>
+      )}
     </div>
   )
 }

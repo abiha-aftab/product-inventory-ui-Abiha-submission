@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button } from '@/components/ui/Button'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { createProduct } from '@/lib/api'
 import type { CreateProductRequest, ProductCategory } from '@/types/product'
 
@@ -70,7 +71,8 @@ export default function ProductsPage() {
   }
   
   return (
-    <div className="max-w-2xl mx-auto">
+    <ErrorBoundary>
+      <div className="max-w-2xl mx-auto">
       <div className="bg-white shadow-sm rounded-lg p-6">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">Add New Product</h2>
         
@@ -245,5 +247,6 @@ export default function ProductsPage() {
         </form>
       </div>
     </div>
+    </ErrorBoundary>
   )
 }

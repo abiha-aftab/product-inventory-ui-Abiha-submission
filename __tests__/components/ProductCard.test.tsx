@@ -41,10 +41,14 @@ describe('ProductCard', () => {
   it('shows out of stock status and disables button', () => {
     render(<ProductCard product={outOfStockProduct} />)
     
-    expect(screen.getByText('Out of Stock')).toBeInTheDocument()
+    // Check for stock status badge
+    const stockStatus = screen.getByLabelText(/stock status: out of stock/i)
+    expect(stockStatus).toBeInTheDocument()
     
+    // Check for disabled button
     const addToCartButton = screen.getByRole('button', { name: /out of stock/i })
     expect(addToCartButton).toBeDisabled()
+    expect(addToCartButton).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('handles add to cart click', () => {

@@ -11,25 +11,41 @@ describe('API Functions', () => {
     })
 
     it('filters products by category', async () => {
-      const filters: FilterOptions = { category: 'Electronics', minPrice: undefined, maxPrice: undefined, inStock: undefined }
+      const filters: FilterOptions = { category: 'Electronics' }
       const products = await getProducts(filters)
       
-      const electronicsProducts = products.filter(p => p.category === 'Electronics')
-      expect(electronicsProducts.length).toBeGreaterThan(0)
+      expect(products.length).toBeGreaterThan(0)
+      products.forEach(product => {
+        expect(product.category).toBe('Electronics')
+      })
     })
 
     it('filters products by price range', async () => {
       const filters: FilterOptions = { 
-        category: '', 
         minPrice: 50, 
-        maxPrice: 200, 
-        inStock: undefined 
+        maxPrice: 200
       }
       const products = await getProducts(filters)
       
       products.forEach(product => {
         expect(product.price).toBeGreaterThanOrEqual(50)
         expect(product.price).toBeLessThanOrEqual(200)
+      })
+    })
+
+    it('filters products by stock status', async () => {
+      const inStockFilters: FilterOptions = { inStock: true }
+      const inStockProducts = await getProducts(inStockFilters)
+      
+      inStockProducts.forEach(product => {
+        expect(product.stock).toBeGreaterThan(0)
+      })
+
+      const outOfStockFilters: FilterOptions = { inStock: false }
+      const outOfStockProducts = await getProducts(outOfStockFilters)
+      
+      outOfStockProducts.forEach(product => {
+        expect(product.stock).toBeLessThanOrEqual(0)
       })
     })
   })
@@ -63,7 +79,7 @@ describe('API Functions', () => {
         sku: 'TEST-123'
       } as CreateProductRequest
 
-      await expect(createProduct(invalidProduct)).rejects.toThrow('Invalid product data')
+      await expect(createProduct(invalidProduct)).rejects.toThrow('Product name is required')
     })
 
     it('throws error for negative price', async () => {
@@ -76,7 +92,7 @@ describe('API Functions', () => {
         sku: 'TEST-123'
       }
 
-      await expect(createProduct(invalidProduct)).rejects.toThrow('Price cannot be negative')
+      await expect(createProduct(invalidProduct)).rejects.toThrow('Price must be between 0.01 and')
     })
   })
 })

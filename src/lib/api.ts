@@ -1,42 +1,69 @@
 import type { Product, CreateProductRequest, UpdateProductRequest, FilterOptions } from '@/types/product'
-import type { ApiResponse } from '@/types/api'
+import { ApiException, type ApiResponse } from '@/types/api'
 import { mockProducts } from '@/data/mockProducts'
+
+/**
+ * Historical issues (documented for future regressions):
+ * - Filtering previously ran multiple passes and inverted stock logic (`inStock` true returned OOS items).
+ * - Validation only checked a couple of fields, allowing NaN/Infinity prices, negative stock, duplicate SKUs, etc.
+ * - IDs were generated with Math.random, which risked collisions in larger lists.
+ */
 
 // Simulate API delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
-// BUG: This function has memory leaks and inefficient data handling
+const MAX_ALLOWED_PRICE = 1_000_000
+
+const normalizeNumber = (value?: number) => {
+  if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
+    return undefined
+  }
+  return value
+}
+
 export async function getProducts(filters?: FilterOptions): Promise<Product[]> {
   await delay(800) // Simulate slow API
   
-  let products = [...mockProducts]
-  
-  if (filters) {
-    // PERFORMANCE ISSUE: Multiple array iterations instead of single pass
-    if (filters.category) {
-      products = products.filter(p => p.category === filters.category)
-    }
-    
-    // BUG: Price filtering logic is incorrect
-    if (filters.minPrice) {
-      products = products.filter(p => p.price >= filters.minPrice!) // Non-null assertion is dangerous
-    }
-    
-    if (filters.maxPrice) {
-      products = products.filter(p => p.price <= filters.maxPrice!)
-    }
-    
-    // BUG: Stock filtering logic is backwards
-    if (filters.inStock !== undefined) {
-      if (filters.inStock) {
-        products = products.filter(p => p.stock <= 0) // Should be > 0
-      } else {
-        products = products.filter(p => p.stock > 0) // Should be <= 0
-      }
-    }
+  if (!filters) {
+    return [...mockProducts]
   }
-  
-  return products
+
+  const normalizedFilters: FilterOptions = {
+    category: filters.category?.trim() || undefined,
+    minPrice: normalizeNumber(filters.minPrice),
+    maxPrice: normalizeNumber(filters.maxPrice),
+    inStock: filters.inStock,
+  }
+
+  return mockProducts.filter((product) => {
+    if (normalizedFilters.category && product.category !== normalizedFilters.category) {
+      return false
+    }
+
+    if (
+      normalizedFilters.minPrice !== undefined &&
+      product.price < normalizedFilters.minPrice
+    ) {
+      return false
+    }
+
+    if (
+      normalizedFilters.maxPrice !== undefined &&
+      product.price > normalizedFilters.maxPrice
+    ) {
+      return false
+    }
+
+    if (normalizedFilters.inStock === true && product.stock <= 0) {
+      return false
+    }
+
+    if (normalizedFilters.inStock === false && product.stock > 0) {
+      return false
+    }
+
+    return true
+  })
 }
 
 export async function getProduct(id: string): Promise<Product | null> {
@@ -46,25 +73,55 @@ export async function getProduct(id: string): Promise<Product | null> {
   return product || null
 }
 
-// BUG: This function doesn't properly validate input data
 export async function createProduct(data: CreateProductRequest): Promise<ApiResponse<Product>> {
   await delay(500)
-  
-  // Missing validation for required fields
-  if (!data.name || !data.category) {
-    throw new Error('Invalid product data')
+
+  const assertString = (value: string, field: string) => {
+    if (!value || !value.trim()) {
+      throw new ApiException('VALIDATION_ERROR', `${field} is required`)
+    }
+    return value.trim()
   }
-  
-  // BUG: Price validation is incorrect
-  if (data.price < 0) { // Should also check for reasonable upper bounds
-    throw new Error('Price cannot be negative')
+
+  const assertNumber = (value: number, field: string) => {
+    if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
+      throw new ApiException('VALIDATION_ERROR', `${field} must be a valid number`)
+    }
+    return value
   }
-  
+
+  const name = assertString(data.name, 'Product name')
+  const description = assertString(data.description, 'Description')
+  const category = assertString(data.category, 'Category')
+  const sku = assertString(data.sku, 'SKU')
+  const price = assertNumber(data.price, 'Price')
+  const stock = assertNumber(data.stock, 'Stock')
+
+  if (price <= 0 || price > MAX_ALLOWED_PRICE) {
+    throw new ApiException('VALIDATION_ERROR', `Price must be between 0.01 and ${MAX_ALLOWED_PRICE.toLocaleString()}`)
+  }
+
+  if (!Number.isInteger(stock) || stock < 0) {
+    throw new ApiException('VALIDATION_ERROR', 'Stock must be a non-negative integer')
+  }
+
+  if (mockProducts.some((product) => product.sku === sku)) {
+    throw new ApiException('DUPLICATE_SKU', 'A product with this SKU already exists')
+  }
+
+  const now = new Date().toISOString()
+
   const newProduct: Product = {
-    id: Math.random().toString(36).substr(2, 9), // BUG: Using Math.random for ID generation
-    ...data,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Math.random().toString(36).slice(2, 11),
+    name,
+    description,
+    category,
+    price,
+    stock,
+    imageUrl: data.imageUrl?.trim() || undefined,
+    sku,
+    createdAt: now,
+    updatedAt: now,
   }
   
   // In a real app, this would persist to a database
